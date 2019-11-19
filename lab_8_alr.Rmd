@@ -1,0 +1,193 @@
+---
+title: "Lab 8 - ANOVA, chi-square, beeswarm"
+author: "Amelia Ritger"
+date: "11/19/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(car)
+library(janitor)
+library(ggbeeswarm)
+library(kableExtra)
+```
+
+#### 1. read in data (penguins.csv)
+```{r}
+peng <- read_csv("penguins.csv") %>%
+  janitor::clean_names()
+```
+
+#### 2. find counts of penguins by sex and species
+```{r}
+peng_counts <- peng %>%
+  count(species,sex)
+peng_counts
+```
+
+#### 3. compare flipper sizes for female penguins across the 3 species
+```{r}
+peng_f <- peng %>%
+  filter(sex=="FEMALE")
+
+#faceted histogram
+ggplot(data=peng_f, aes(x=flipper_length_mm)) +
+  geom_histogram() +
+  facet_wrap(~species)
+
+#faceted qq plot
+ggplot(data=peng_f, aes(sample= flipper_length_mm)) +
+  geom_qq() +
+  facet_wrap(~species)
+```
+
+### 4. Find summary statistics
+```{r}
+peng_f_summary <- peng_f %>%
+  group_by(species) %>%
+  summarize(mean_flipper_length = mean(flipper_length_mm),
+            sd_flipper_length = sd(flipper_length_mm),
+            sample_size = n(),
+            se_flipper_length = sd(flipper_length_mm)/sqrt(n()),
+            varflipper_length = var(flipper_length_mm))
+```
+
+
+Levene's Test (hypothesis test for equal variances):
+```{r}
+# H0: group variances are equal
+leveneTest(flipper_length_mm~species, data=peng_f)
+```
+
+Conclusion: Retain the null hypothesis that variances are equal.
+
+Ok, I've done my exploratory analysis, and ALL of these pieces combined are making me think that a one-way ANOVA is an appropriate way to compare means between the 3 species.
+
+#### 5. Make a beeswarm plot with the mean and standard deviation overlayed on top of it
+
+The three most common error bars:
+
+- standard deviation (measure of spread)
+
+- standard error (how far our estimate is from true population)
+
+- confidence interval 
+
+```{r}
+ggplot() +
+  geom_beeswarm(data=peng_f,
+                aes(x=species, y=flipper_length_mm),
+                size=1,
+                alpha=0.6,
+                color="gray60") +
+  scale_x_discrete(labels=c("Adelie", "Chinstrap", "Gentoo")) +
+  geom_point(data=peng_f_summary,
+             aes(x=species, y=mean_flipper_length),
+             color="red",
+             size=2) +
+  geom_errorbar(data=peng_f_summary,
+                aes(x=species,
+                    ymin=mean_flipper_length - sd_flipper_length,
+                    ymax=mean_flipper_length + sd_flipper_length), 
+                width=0.1)
+```
+
+** NOTE** Make sure that if you're showing summary statistics
+
+**Fig 1** Flipper length (mm) for three female penguin species observed at Palmer Station LTER, Antartica. Gray points indicate individual flipper lengths, red dots indicate group means, error bars indicate $\pm$ 1 standard deviation. Data source:
+
+#### One-way ANOVA
+
+Is there a significant difference in mean flipper length for female penguins between the three species?
+```{r}
+peng_aov <- aov(flipper_length_mm ~ species, data=peng_f)
+summary(peng_aov)
+```
+
+H0: Means are equal across all groups
+HA: Means are not equal across all groups (at least two differ)
+
+Conclusion: The mean flipper length for the three species for female penguins are NOT equal.
+
+... so then which ones differ significantly?
+
+Answer that with a post-hoc pairwise comparisons test!
+```{r}
+TukeyHSD(peng_aov)
+# diff is the actual difference in means between the two groups
+# lwr and upr represent 95% CI on difference between groups
+# p adj tells you if there is a sig diff between each pair being compared
+```
+
+One-way ANOVA with post-hoc Tukey's HSD reveals significant differences in mean flipper length across all species (Gentoo, mean =..., Adelie, mean=..., ...) (F(df)=..., p <0.001 for al pairwise comparisons).
+
+**Comparing this with the beeswarm plot above... this is good evidence for with large sample sizes, you can find significant ANYTHING. Thus it's important to also include effect sizes, etc!**
+
+#### 7. Making nicer tables (with proportions)
+```{r}
+party_relig <- gss_cat %>%
+  filter(partyid %in% c("Strong republican", "Strong democrat")) %>%
+  filter(relig %in% c("None", "Catholic")) %>%
+  count(partyid, relig)
+
+# check to see what observations you have retained after filtering, etc
+unique(party_relig$partyid)
+
+party_relig_table <- party_relig %>%
+  pivot_wider(names_from=relig, values_from=n)
+  
+```
+
+#### 8. Make a nice table of proportions using janitor::adorn_*
+```{r}
+party_relig_props <- party_relig_table %>%
+  adorn_percentages(denominator="row") %>% #convert to percentages
+  adorn_pct_formatting(digits=1) %>% #dictate sig figs
+  adorn_ns(position="front") #show counts follow by percentages
+
+party_relig_props #boo! it doesn't look as good as I wanted it to!
+
+kable(party_relig_props) %>%
+  kable_styling()
+```
+
+Here are a few different ways to ask a question for this scenario:
+
+- Are political and religious affiliation independent from each other?
+
+- Is there a significan association between political affiliation and religious affiliation?
+
+- Is there a significant effect of political association (strong republican vs strong democrat) on religoius affiliation (none, catholic)?
+
+- Is there a significant difference in religoius affiliation between strong republicans and strong democrats?
+
+**AKA are the proportions that exist across groups so different that we think the two groups are not independent of one another?**
+
+```{r}
+# Make this a contingency table that ONLY contains the actual counts
+chi_counts <- party_relig_table %>%
+  select(-partyid)
+```
+
+H0:
+
+- There is no signfiicant association between party affiliation and religious affiliation
+
+- There is no significant difference in religious affiliation between the two party groups (str repub or str dem)
+
+- Party and religious affiliation are independent
+
+```{r}
+my_party_chi <- chisq.test(chi_counts)
+```
+
+Conclusion:
+
+- There is a significant difference in religious affiliation (none, catholic) between strong republicans and strong democrats ($\chi^2$=..., p<0.001)...
+
+- There is no significant association between party ID and religious affiliation
+
+- Party affiliation and religious affiliation are independent
+
