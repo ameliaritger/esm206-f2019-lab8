@@ -187,7 +187,7 @@ Conclusion:
 
 - There is a significant difference in religious affiliation (none, catholic) between strong republicans and strong democrats ($\chi^2$=..., p<0.001)...
 
-- There is no significant association between party ID and religious affiliation
+- There is a significant association between party ID and religious affiliation
 
-- Party affiliation and religious affiliation are independent
+- Party affiliation and religious affiliation are dependent!
 
